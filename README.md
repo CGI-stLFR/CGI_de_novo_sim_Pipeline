@@ -16,11 +16,12 @@ This pipeline is for Sentieon's assembly software for use with simulated data.
 - config.yaml
     - The config file contains all the parameters necessary for modular assembly and evaluation
     - More info can be found in the comments and below
-- phase_block_n50.py
+- phase\_block\_n50.py
     - Script to calculate the phase block N50
-    - I'm having trouble finding the e-mail about how this is calculated, as Outlook won't let me search?
-    - Don should have more info and I'll try and double check this ASAP
-- scaffold_contigs.py
+    - (1) Sum the size of all contigs by PID for all PID >= 0.
+    - (2) For each contig with a PID equal to -1, add the length of this contig to the larger adjacent PID within the scaffold.
+    - (3) Order the PIDs from smallest to largest and calculate the phase N50 as usual.)))
+- scaffold\_contigs.py
     - Script to scaffold contigs
     - This combines contigs with the same scaffold id (SID)
     - It inserts Ns such that they equal the GAP field of the contig
