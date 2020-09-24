@@ -7,7 +7,8 @@ configfile: "config.yaml"
 shell.prefix('export SENTIEON_INSTALL={}; export SENTIEON_LICENSE={}; '.format(config['params']['sentieon_install'], config['params']['sentieon_license']))
 
 
-
+# Rule for run all, could be shortened with a function
+# These are the targets we want to make
 rule run_all:
     input:
         "Quast_Contigs_0/quast.log",
@@ -38,6 +39,8 @@ rule run_all:
         "Contig_Binning/SV_Calling/SV_Comparison_Diploid/summary.txt"
 
 
+# Rule for read clustering
+# mapping reads ot the seed library
 rule read_clustering:
     input:
         expand("{sample}", sample=config['samples']['fastq'])
@@ -58,6 +61,7 @@ rule read_clustering:
             "$SENTIEON_INSTALL/bin/sentieon util sort -t {threads} -o {output} --sam2bam - &> {log}"
 
 
+# Sentieon's software uses a pcr indel model to limit false positives
 rule indel_modeling:
     input:
         "Assembly/cg50X_SentieonIter0.bam"
@@ -75,6 +79,7 @@ rule indel_modeling:
             "--algo RepeatStat {output} &> {log}"
 
 
+# First assembly step
 rule linked_reads_assemble:
     input:
         bam = "Assembly/cg50X_SentieonIter0.bam",
@@ -97,6 +102,7 @@ rule linked_reads_assemble:
             "{output.bam} &> {log}"
 
 
+# First graph solving step
 rule linked_reads_solve:
     input:
         clusters = "Assembly/cg50X_SentieonIter0.bam",
@@ -123,6 +129,7 @@ rule linked_reads_solve:
             "--range_barcode {params.range_bc} &> {log}"
 
 
+# rescue step for unassembled reads and contigs
 rule linked_reads_rescue:
     input:
         bam = "Assembly/cg50X_SentieonIter0.bam",
@@ -144,6 +151,7 @@ rule linked_reads_rescue:
             "{output} &> {log}"
 
 
+# Second assembly step/scaffolding
 rule linked_reads_bridge:
     input:
         bam = "Assembly/LinkedReads.rescue.bam",
@@ -163,6 +171,7 @@ rule linked_reads_bridge:
             "{output} &> {log}"
 
 
+# Second graph solving step
 rule linked_reads_solve_2:
     input:
         bam = "Assembly/cg50X_SentieonIter0.bam",
@@ -192,6 +201,7 @@ rule linked_reads_solve_2:
             "--phase_barcodes {output.barcodes} &> {log}"
 
 
+# run quast on contig assemblies
 rule run_quast_contigs:
     input:
         "Assembly/LinkedReads.contig_{hap}.fasta"
@@ -212,6 +222,7 @@ rule run_quast_contigs:
             "-s "
 
 
+# run minimap for each phase hap against truth_haps for binning
 rule run_minimap_phased_contigs:
     input:
         fasta = "Assembly/LinkedReads.contig.phase_{hap}.fasta",
@@ -230,6 +241,7 @@ rule run_minimap_phased_contigs:
             "gzip -c > {output}"
 
 
+# get contig N50 using python script
 rule contig_phase_n50:
     input:
         "Assembly/LinkedReads.contig.phase_{hap}.fasta"
@@ -241,6 +253,7 @@ rule contig_phase_n50:
         "{params.phase_script} {input} > {output}"
 
 
+# bin contigs by the phase id (PID), creates temp file of results
 rule bin_by_pid:
     input:
         input_fa = expand("Assembly/LinkedReads.contig.phase_{hap}.fasta", hap=[0,1]),
@@ -257,6 +270,7 @@ rule bin_by_pid:
             "{output}"
 
 
+# maps truth haplotypes to 0 and 1
 def get_truth_hap_id(wildcards):
   '''
   Given a truth hap name, get a 0/1 ID
@@ -270,28 +284,7 @@ def get_truth_hap_id(wildcards):
     raise ValueError("Unknown 'truth_hap': " + wildcards.ref_hap)
 
 
-#rule subset_binned:
-#    input:
-#        bin_results = "Contig_Binning/pid_binning_results.txt",
-#        contigs = expand("Assembly/LinkedReads.contig.phase_{hap}.fasta", hap=[0,1]),
-#        truth_fa = config['samples']['sim_ref_stem'] + "/mergeScaftig_normalized_hap{ref_hap}.fa"
-#    output:
-#        "Contig_Binning/binned_hap{ref_hap}_contigs.fa"
-#    params:
-#        seqtk = config['software']['seqtk'],
-#        truth_hap_id = get_truth_hap_id
-#    shell:
-#        "contigs=({input.contigs}); "
-#        "for hap_id in 0 1; "
-#        "do "
-#            "grep \"^${{hap_id}}[[:space:]]{params.truth_hap_id}\" {input.bin_results} | "
-#                "cut -f 3 > Contig_Binning/tmp_contigs_hap${{hap_id}}.txt; "
-#            "{params.seqtk} subseq ${{contigs[$hap_id]}} "
-#                "Contig_Binning/tmp_contigs_hap${{hap_id}}.txt >> "
-#                "{output}; "
-#        "done"
-
-
+# returns wildcard for haplotype
 def get_contig_hap_id(wildcards):
     '''
     Given a contig hap name, get a 0/1 ID
@@ -305,6 +298,8 @@ def get_contig_hap_id(wildcards):
         raise ValueError("Unknown 'truth_hap': " + wildcards.hap)
 
 
+# create a file of the appropriate phases for each contig
+# creates list of contigs for each original haplotype and truth bin
 rule create_subset_files:
     input:
         bin_results = "Contig_Binning/pid_binning_results.txt",
@@ -321,6 +316,7 @@ rule create_subset_files:
             "cut -f 3 > {output}"
 
 
+# subset contigs based on the tmp_contigs_hapN_binZ.txt files
 rule subset_bins:
     input:
         bin_results = "Contig_Binning/pid_binning_results.txt",
@@ -343,6 +339,7 @@ rule subset_bins:
             "{output}"
 
 
+# map binned contigs to ref hapA
 rule run_minimap_binned_contigs_refA:
     input:
         contigs = "Contig_Binning/binned_hap{ref_hap}_contigs.fa",
@@ -372,6 +369,7 @@ rule run_minimap_binned_contigs_refA:
         "samtools index {output.bam}"
 
 
+# map binned contigs to ref hapB
 rule run_minimap_binned_contigs_refB:
     input:
         contigs = "Contig_Binning/binned_hap{ref_hap}_contigs.fa",
@@ -401,10 +399,12 @@ rule run_minimap_binned_contigs_refB:
         "samtools index {output.bam}"
 
 
+# return truth fasta based on wildcards
 def get_truth_fa(wildcards):
     return "{}/mergeScaftig_normalized_hap{}.fa".format(config['samples']['sim_ref_stem'], wildcards.ref_hap)
 
 
+# run quast based on binned contigs
 rule run_quast_binned_contigs:
     input:
         contigs = "Contig_Binning/binned_hap{ref_hap}_contigs.fa",
@@ -427,6 +427,10 @@ rule run_quast_binned_contigs:
             "-s "
 
 
+# sort the binned contigs by SID and contig number for scaffolding
+# this creates a TSV with a captured contig number and scaffold ID then
+# does a numeric sort based on those before transforming the results
+# back to fasta format
 rule sort_binned_contigs:
     input:
         "Contig_Binning/binned_hap{ref_hap}_contigs.fa"
@@ -448,6 +452,7 @@ rule sort_binned_contigs:
             "{output}"
 
 
+# scaffold contigs
 rule scaffold_contigs:
     input:
         "Contig_Binning/binned_hap{ref_hap}_contigs.sorted.fa"
@@ -459,6 +464,8 @@ rule scaffold_contigs:
         "{params.scaffold} {input} > {output}"
 
 
+# map scaffolded contigs to ref hapA
+# creates a VCF, paf and bam file
 rule run_minimap_binned_scaffolds_refA:
     input:
         scaffolds = "Scaffolds/scaffolded_hap{ref_hap}_contigs.fa",
@@ -488,6 +495,8 @@ rule run_minimap_binned_scaffolds_refA:
         "samtools index {output.bam}"
 
 
+# map scaffolded contige to ref hapB
+# creates a VCF, paf and bam file
 rule run_minimap_binned_scaffolds_refB:
     input:
         scaffolds = "Scaffolds/scaffolded_hap{ref_hap}_contigs.fa",
@@ -515,8 +524,9 @@ rule run_minimap_binned_scaffolds_refB:
             "{input.truth_fa} {input.scaffolds} | "
             "samtools sort -O bam -o {output.bam}; "
         "samtools index {output.bam}"
-        
-    
+
+
+# run quast with scaffolds against the appropriate truth fasta
 rule run_quast_scaffolds:
     input:
         scaffolds = "Scaffolds/scaffolded_hap{ref_hap}_contigs.fa",
@@ -539,6 +549,7 @@ rule run_quast_scaffolds:
             "-s "
 
 
+# map contigs to a human reference, create a paf file
 rule map_contigs_to_hrg:
     input:
         "Contig_Binning/binned_hap{ref_hap}_contigs.fa"
@@ -559,6 +570,7 @@ rule map_contigs_to_hrg:
         "gzip -c > {output}"
 
 
+# call variants in var format and scrape unique alignments
 rule get_contig_alignment_bed:
     input:
         "Contig_Binning/SV_Calling/PAF_Alignments/hap{ref_hap}_ref.paf.gz"
@@ -572,6 +584,7 @@ rule get_contig_alignment_bed:
         "cut -f2- > {output}"
 
 
+# create diploid coverage bedfile based on contig alignments
 rule get_diploid_bed:
     input:
         expand("Contig_Binning/SV_Calling/PAF_BED_Alignments/hap{ref_hap}_ref.bed", ref_hap=['A', 'B'])
@@ -586,6 +599,7 @@ rule get_diploid_bed:
             "{output}"
 
 
+# map contig to human ref in sam format
 rule sam_alignments_to_hrg:
     input:
         "Contig_Binning/binned_hap{ref_hap}_contigs.fa"
@@ -606,6 +620,7 @@ rule sam_alignments_to_hrg:
         "gzip -c > {output}"
 
 
+# sort and convert the sam to bam
 rule sam_to_bam:
     input:
         "Contig_Binning/SV_Calling/SAM_Alignments/hap{ref_hap}_ref.sam.gz"
@@ -620,6 +635,7 @@ rule sam_to_bam:
             "-o {output}"
 
 
+# create a paired VCF file
 rule pair_vcfs:
     input:
         expand("Contig_Binning/SV_Calling/BAM_Alignments/hap{ref_hap}_ref.bam", ref_hap = ['A', 'B'])
@@ -637,6 +653,7 @@ rule pair_vcfs:
         "{params.htsbox} bgzip > {output}"
 
 
+# phase vcfs with vcf_pair
 rule phase_vcfs:
     input:
         "Contig_Binning/SV_Calling/Paired_VCF/query_contigs_pair.vcf.gz"
@@ -651,6 +668,7 @@ rule phase_vcfs:
         "{params.htsbox} bgzip > {output}"
 
 
+# index the phased VCF
 rule index_phased_vcf:
     input:
         "Contig_Binning/SV_Calling/Phased_VCFs/query_contigs_phased.vcf.gz"
@@ -660,6 +678,8 @@ rule index_phased_vcf:
         "tabix -p vcf {input}"
 
 
+# compare the VCF results to benchmarked SVs made from the truth haplotypes
+# uses truvari for the comparison
 rule benchmark_svs:
     input:
         vcf = "Contig_Binning/SV_Calling/Phased_VCFs/query_contigs_phased.vcf.gz",
@@ -676,8 +696,9 @@ rule benchmark_svs:
             "-c {input.vcf} "
             "-o $( dirname {output} ) "
             "-f {params.ref}"
-        
 
+
+# benchmark again using only diploid coverage sites
 rule benchmark_svs_diploid_cov:
     input:
         vcf = "Contig_Binning/SV_Calling/Phased_VCFs/query_contigs_phased.vcf.gz",
@@ -698,6 +719,7 @@ rule benchmark_svs_diploid_cov:
             "-f {params.ref}"
 
 
+# stratify the SVs using stratification_test.py
 rule stratify_svs:
     input:
         "Contig_Binning/SV_Calling/SV_Comparison/summary.txt"
@@ -712,6 +734,3 @@ rule stratify_svs:
             "-b {params.strat_bed_dir} "
             "-o $( dirname {output} ) "
             "$(dirname {input} )"
-
-
-

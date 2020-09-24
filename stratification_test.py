@@ -11,7 +11,7 @@ import errno
 
 def get_arguments():
     parser = argparse.ArgumentParser(description="Stratify SV calls across ga4gh regions")
-    parser.add_argument('VCF_Dir', type=str, 
+    parser.add_argument('VCF_Dir', type=str,
                         help="Path to Truvari VCFs")
     parser.add_argument('-t', '--tsv', type=str, help="path to ga4gh tsv file",
                         default="/home-02/eanderson/Sentieon_Binning_and_Stratification/ga4gh_all_coordonly_2.tsv")
@@ -22,6 +22,7 @@ def get_arguments():
     args = parser.parse_args()
     return args
 
+# get various arguments as Path objects
 args = get_arguments()
 print(args.VCF_Dir, type(args.VCF_Dir))
 vcf_base_path = Path(args.VCF_Dir)
@@ -29,13 +30,16 @@ strat_bed_dir = Path(args.bed)
 strat_tsv = Path(args.tsv)
 outdir = Path(args.outdir)
 
+# Paths of truvari output fp, tp and fn VCFs
 VCFs = [vcf_base_path / "fp.vcf", vcf_base_path / 'tp-call.vcf', vcf_base_path / "fn.vcf"]
 stratification_map = {}
+# map the names and paths of the various stratification bed files
 with open(strat_tsv, "r") as fh:
     for line in fh:
         name, strat_bed = line.rstrip().split('\t')
         stratification_map[name] = strat_bed_dir /  strat_bed
-        
+
+# This just counts lines in a file
 def count_lines(file_object):
     counter = 0
     for line in file_object:
@@ -43,24 +47,27 @@ def count_lines(file_object):
             counter += 1
 
     return counter
-        
 
+
+# iterate through fp, fn and tp VCFs
 results_list = []
 for vcf in VCFs:
 
     results_dict = {}
 
+    # use bcftools to get the vcf results within the bed regions
     for name, strat_path in stratification_map.items():
         output = sbp.run(['bcftools', 'view', '-O', 'v', '-T', strat_path, vcf], stdout=sbp.PIPE)
         print(output.args, file=sys.stderr)
+        # count results
         results_dict[name] = count_lines(output.stdout.decode('utf-8').split("\n"))
 
-
+    # get total count of entries in the vcf
     with open(vcf, "r") as vcf_all:
         results_dict['All'] = count_lines(vcf_all)
     results_list.append(results_dict)
 
-
+# Create a dataframe of results, transpose it and get totals and fp/fn rates
 df = pd.DataFrame(results_list, index=['FP', 'TP', 'FN'])
 df2 = df.T
 df2['Total_Vars'] = df2['TP'] + df2['FN']
@@ -90,5 +97,3 @@ sns.barplot(x=df2.index, y=df2["FP_Rate"], data=df2, ax = ax1)
 
 plt.tight_layout()
 plt.savefig(outdir / "results.png")
-
-
